@@ -595,8 +595,17 @@ fi
 
 # Перезапуск SSH (НЕ завершаем текущую сессию)
 if [ "$SSH_PORT_CHANGED" = true ] || [ "$DISABLE_SSH_PASSWORD" = true ]; then
-    systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true
-    success "SSH перезапущен"
+  if "$SSHD_BIN" -t; then
+    if systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null; then
+      success "SSH перезапущен"
+    else
+      error "Не удалось перезапустить SSH!"
+      exit 1
+    fi
+  else
+    error "Конфигурация SSH невалидна. SSH не перезапускаем."
+    exit 1
+  fi
 fi
 
 # =============================================================================
