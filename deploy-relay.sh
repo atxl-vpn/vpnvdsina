@@ -215,8 +215,17 @@ fi
 [ -z "$RELAY_UUID" ] && RELAY_UUID=$(gen_uuid)
 
 # Определить текущий SSH-порт (если --ssh-port не указан)
-CURRENT_SSH_PORT=$(grep -E "^Port " /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
-[ -z "$CURRENT_SSH_PORT" ] && CURRENT_SSH_PORT=22
+SSHD_BIN="$(command -v sshd || echo /usr/sbin/sshd)"
+
+CURRENT_SSH_PORT="$("$SSHD_BIN" -T 2>/dev/null | awk 'tolower($1)=="port" {print $2; exit}' || true)"
+
+if [ -z "${CURRENT_SSH_PORT:-}" ]; then
+  CURRENT_SSH_PORT="$(grep -hE '^[[:space:]]*Port[[:space:]]+' \
+    /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null \
+    | awk '{print $2; exit}' || true)"
+fi
+
+[ -z "${CURRENT_SSH_PORT:-}" ] && CURRENT_SSH_PORT=22
 if [ -z "$SSH_PORT" ]; then
     SSH_PORT="$CURRENT_SSH_PORT"
     SSH_PORT_CHANGED=false
@@ -297,7 +306,7 @@ if [ ! -s "$XRAY_INSTALL_SCRIPT" ] || ! head -1 "$XRAY_INSTALL_SCRIPT" | grep -q
     error "Xray installer download failed or file is invalid"
     exit 1
 fi
-bash "$XRAY_INSTALL_SCRIPT" @ install
+bash "$XRAY_INSTALL_SCRIPT" install
 rm -f "$XRAY_INSTALL_SCRIPT"
 
 # Проверка установки
@@ -353,8 +362,8 @@ step 5 "Генерация ключей для relay inbound"
 
 info "Генерация x25519 keypair..."
 KEYPAIR_OUTPUT=$($XRAY_BIN x25519 2>&1)
-RELAY_PRIVATE_KEY=$(echo "$KEYPAIR_OUTPUT" | grep "Private key:" | awk '{print $NF}')
-RELAY_PUBLIC_KEY=$(echo "$KEYPAIR_OUTPUT" | grep "Public key:" | awk '{print $NF}')
+RELAY_PRIVATE_KEY=$(printf '%s\n' "$KEYPAIR_OUTPUT" | awk 'tolower($0) ~ /private/ {print $NF; exit}')
+RELAY_PUBLIC_KEY=$(printf '%s\n' "$KEYPAIR_OUTPUT" | awk 'tolower($0) ~ /(public|password)/ {print $NF; exit}')
 
 if [ -z "$RELAY_PRIVATE_KEY" ] || [ -z "$RELAY_PUBLIC_KEY" ]; then
     error "Не удалось сгенерировать x25519 ключи!"
